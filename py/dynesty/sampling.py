@@ -15,6 +15,7 @@ from numpy import linalg
 
 from .utils import unitcheck, apply_reflect, get_random_generator
 from .bounding import randsphere
+from .conversion_relation import *
 
 __all__ = [
     "sample_unif", "sample_rwalk", "sample_slice", "sample_rslice",
@@ -23,11 +24,112 @@ __all__ = [
 
 SamplerArgument = namedtuple('SamplerArgument', [
     'u', 'loglstar', 'axes', 'scale', 'prior_transform', 'loglikelihood',
-    'rseed', 'kwargs'
+    'rseed', 'kwargs', 'flow_cond_dict'
 ])
 
+# def sample_unif(args):
+#     print('Function call: sample_unif (sampling.py)')
+    
+#     """
+#     Evaluate a new point sampled uniformly from a bounding proposal
+#     distribution. Parameters are zipped within `args` to utilize
+#     `pool.map`-style functions.
+
+#     Parameters
+#     ----------
+#     u : `~numpy.ndarray` with shape (ndim,)
+#         Position of the initial sample.
+
+#     loglstar : float
+#         Ln(likelihood) bound. **Not applicable here.**
+
+#     axes : `~numpy.ndarray` with shape (ndim, ndim)
+#         Axes used to propose new points. **Not applicable here.**
+
+#     scale : float
+#         Value used to scale the provided axes. **Not applicable here.**
+
+#     prior_transform : function
+#         Function transforming a sample from the a unit cube to the parameter
+#         space of interest according to the prior.
+
+#     loglikelihood : function
+#         Function returning ln(likelihood) given parameters as a 1-d `~numpy`
+#         array of length `ndim`.
+
+#     kwargs : dict
+#         A dictionary of additional method-specific parameters.
+#         **Not applicable here.**
+
+#     Returns
+#     -------
+#     u : `~numpy.ndarray` with shape (ndim,)
+#         Position of the final proposed point within the unit cube. **For
+#         uniform sampling this is the same as the initial input position.**
+
+#     v : `~numpy.ndarray` with shape (ndim,)
+#         Position of the final proposed point in the target parameter space.
+
+#     logl : float
+#         Ln(likelihood) of the final proposed point.
+
+#     nc : int
+#         Number of function calls used to generate the sample. For uniform
+#         sampling this is `1` by construction.
+
+#     blob : dict
+#         Collection of ancillary quantities used to tune :data:`scale`. **Not
+#         applicable for uniform sampling.**
+
+#     """
+
+#     # Unzipping.
+
+#     # Evaluate.
+#     v = args.prior_transform(np.asarray(args.u))
+#     logl = args.loglikelihood(np.asarray(v))
+#     nc = 1
+#     blob = None
+
+#     return args.u, v, logl, nc, blob
+
+def convert_to_eta_chi1chi2(v, flow_cond_dict):
+    
+    theta0, theta3, theta3s = v[:3]
+    mtotal, eta = mtotal_eta_from_tau0_tau3(theta0/(2*np.pi*flow_cond_dict['flow']), theta3/(2*np.pi*flow_cond_dict['flow']), flow_cond_dict['flow'])
+    mass1, mass2 = mass1_mass2_from_mtotal_eta(mtotal, eta)
+
+    delta = (mass1 - mass2)/(mass1 + mass2)
+    chi_r = (48*np.pi/113) * (theta3s/theta3)
+
+    if flow_cond_dict['condition'] == 'equal_spins':
+        spin1z = chi_r / (1 - (76/113)*eta)
+        spin2z = spin1z
+
+    elif flow_cond_dict['condition'] == 'zero_secondary':
+
+        spin1z = chi_r / (0.5 + 0.5*delta - (76/226)*eta)
+        spin2z = 0
+
+    return eta, spin1z, spin2z
+
+def test_physical_point(v, flow_cond_dict):
+    '''Will return a binary statement. `False` if point is physical.'''
+
+    flag = False
+    eta, spin1z, spin2z = convert_to_eta_chi1chi2(v, flow_cond_dict)
+
+    if eta > 0.25:
+        flag = True
+
+    if spin1z > 1 and spin2z > 1:
+        flag = True
+
+    return flag
 
 def sample_unif(args):
+    # print('Function call: sample_unif (sampling.py)')
+    
     """
     Evaluate a new point sampled uniformly from a bounding proposal
     distribution. Parameters are zipped within `args` to utilize
@@ -80,19 +182,30 @@ def sample_unif(args):
         applicable for uniform sampling.**
 
     """
-
     # Unzipping.
-
+    rstate = get_random_generator(args.rseed)
     # Evaluate.
-    v = args.prior_transform(np.asarray(args.u))
+    temp = True
+    count = 0
+    while temp:
+        if count == 0:
+            v = args.prior_transform(np.asarray(args.u))
+        else:
+            u = rstate.random(size=len(args.u))
+            v = args.prior_transform(np.asarray(u))
+        temp = test_physical_point(v, args.flow_cond_dict)
+        count+=1
     logl = args.loglikelihood(np.asarray(v))
     nc = 1
     blob = None
-
-    return args.u, v, logl, nc, blob
-
+    
+    if count == 1:
+        return args.u, v, logl, nc, blob
+    else:
+        return u, v, logl, nc, blob
 
 def sample_rwalk(args):
+    # print('Function call: sample_rwalk (sampling.py)')
     """
     Return a new live point proposed by random walking away from an
     existing live point.
@@ -143,16 +256,15 @@ def sample_rwalk(args):
         Collection of ancillary quantities used to tune :data:`scale`.
 
     """
-
     # Unzipping.
     rstate = get_random_generator(args.rseed)
     return generic_random_walk(args.u, args.loglstar, args.axes, args.scale,
                                args.prior_transform, args.loglikelihood,
-                               rstate, args.kwargs)
-
+                               rstate, args.flow_cond_dict, args.kwargs)
 
 def generic_random_walk(u, loglstar, axes, scale, prior_transform,
-                        loglikelihood, rstate, kwargs):
+                        loglikelihood, rstate, flow_cond_dict, kwargs):
+    # print('Function call: generic_random_walk (sampling.py)')
     """
     Generic random walk step
     Parameters
@@ -224,27 +336,37 @@ def generic_random_walk(u, loglstar, axes, scale, prior_transform,
 
     # Here we loop for exactly walks iterations.
     while ncall < walks:
-
-        # This proposes a new point within the ellipsoid
-        # This also potentially modifies the scale
-        u_prop, fail = propose_ball_point(u,
-                                          scale,
-                                          axes,
-                                          n,
-                                          n_cluster,
-                                          rstate=rstate,
-                                          periodic=periodic,
-                                          reflective=reflective,
-                                          nonbounded=nonbounded)
-        # If generation of points within an ellipsoid was
-        # highly inefficient we adjust the scale
+        
+        ## Physicality check.
+        temp = True
+        while temp:
+            # This proposes a new point within the ellipsoid
+            # This also potentially modifies the scale
+            u_prop, fail = propose_ball_point(u,
+                                              scale,
+                                              axes,
+                                              n,
+                                              n_cluster,
+                                              rstate=rstate,
+                                              periodic=periodic,
+                                              reflective=reflective,
+                                              nonbounded=nonbounded)
+            # print(u_prop, fail)
+            # If generation of points within an ellipsoid was
+            # highly inefficient we adjust the scale
+            if fail:
+                continue
+                
+            # Check proposed point.
+            v_prop = prior_transform(u_prop)
+            temp = test_physical_point(v_prop, flow_cond_dict)
+            # print(f'Whether physical = {not temp}')
+        
         if fail:
             nreject += 1
             ncall += 1
             continue
-
-        # Check proposed point.
-        v_prop = prior_transform(u_prop)
+                
         logl_prop = loglikelihood(v_prop)
         ncall += 1
 
@@ -266,7 +388,6 @@ def generic_random_walk(u, loglstar, axes, scale, prior_transform,
 
     return u, v, logl, ncall, blob
 
-
 def propose_ball_point(u,
                        scale,
                        axes,
@@ -276,6 +397,7 @@ def propose_ball_point(u,
                        periodic=None,
                        reflective=None,
                        nonbounded=None):
+    # print('Function call: propose_ball_point (sampling.py)')
     """
     Here we are proposing points uniformly within an n-d ellipsoid.
     We are only trying once.
@@ -283,7 +405,6 @@ def propose_ball_point(u,
     1) proposed point or None
     2) failure flag (if True, the generated point was outside bounds)
     """
-
     # starting point for clustered dimensions
     u_cluster = u[:n_cluster]
 
@@ -317,6 +438,7 @@ def propose_ball_point(u,
 
 
 def _slice_doubling_accept(x1, F, loglstar, L, R, fL, fR):
+    # print('Function call: _slice_doubling_accept (sampling.py)')
     """
     Acceptance test of slice sampling when doubling mode is used.
     This is an exact implementation of algorithm 6 of Neal 2003
@@ -355,6 +477,7 @@ def _slice_doubling_accept(x1, F, loglstar, L, R, fL, fR):
 
 def generic_slice_step(u, direction, nonperiodic, loglstar, loglikelihood,
                        prior_transform, doubling, rstate):
+    # print('Function call: generic_slice_step (sampling.py)')
     """
     Do a slice generic slice sampling step along a specified dimension
 
@@ -480,8 +603,8 @@ def generic_slice_step(u, direction, nonperiodic, loglstar, loglikelihood,
     v_prop = prior_transform(u_prop)
     return u_prop, v_prop, logl_prop, nc, nexpand, ncontract, expansion_warning
 
-
 def sample_slice(args):
+    # print('Function call: sample_slice (sampling.py)')
     """
     Return a new live point proposed by a series of random slices
     away from an existing live point. Standard "Gibs-like" implementation where
@@ -592,6 +715,7 @@ def sample_slice(args):
 
 
 def sample_rslice(args):
+    # print('Function call: sample_rslice (sampling.py)')
     """
     Return a new live point proposed by a series of random slices
     away from an existing live point. Standard "random" implementation where
@@ -695,6 +819,7 @@ def sample_rslice(args):
 
 
 def sample_hslice(args):
+    # print('Function call: sample_hslice (sampling.py)')
     """
     Return a new live point proposed by "Hamiltonian" Slice Sampling
     using a series of random trajectories away from an existing live point.

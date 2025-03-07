@@ -27,6 +27,8 @@ from .utils import (get_seed_sequence, get_print_func, _kld_error,
                     get_enlarge_bootstrap, RunRecord, get_neff_from_logwt,
                     DelayTimer, save_sampler, restore_sampler, _LOWL_VAL)
 
+from .conversion_relation import *
+
 __all__ = [
     "DynamicSampler",
     "weight_function",
@@ -93,6 +95,7 @@ wrong with your likelihood.''')
 
 
 def weight_function(results, args=None, return_weights=False):
+    # print('Function called: weight_function (dynamicsampler.py)')
     """
     The default weight function utilized by :class:`DynamicSampler`.
     Zipped parameters are passed to the function via :data:`args`.
@@ -183,6 +186,7 @@ def weight_function(results, args=None, return_weights=False):
 
 def _get_update_interval_ratio(update_interval, sample, bound, ndim, nlive,
                                slices, walks):
+    # print('Function called: _get_update_interval_ratio (dynamicsampler.py)')
     """
     Get the update_interval divided by the number of live points
     """
@@ -218,6 +222,7 @@ def stopping_function(results,
                       rstate=None,
                       M=None,
                       return_vals=False):
+    # print('Function called: stopping_function (dynamicsampler.py)')
     """
     The default stopping function utilized by :class:`DynamicSampler`.
     Zipped parameters are passed to the function via :data:`args`.
@@ -339,16 +344,51 @@ def stopping_function(results,
     else:
         return stop <= 1.
 
+def convert_to_eta_chi1chi2(v, flow_cond_dict):
+    
+    theta0, theta3, theta3s = v[:3]
+    mtotal, eta = mtotal_eta_from_tau0_tau3(theta0/(2*np.pi*flow_cond_dict['flow']), theta3/(2*np.pi*flow_cond_dict['flow']), flow_cond_dict['flow'])
+    mass1, mass2 = mass1_mass2_from_mtotal_eta(mtotal, eta)
+
+    delta = (mass1 - mass2)/(mass1 + mass2)
+    chi_r = (48*np.pi/113) * (theta3s/theta3)
+
+    if flow_cond_dict['condition'] == 'equal_spins':
+        spin1z = chi_r / (1 - (76/113)*eta)
+        spin2z = spin1z
+
+    elif flow_cond_dict['condition'] == 'zero_secondary':
+
+        spin1z = chi_r / (0.5 + 0.5*delta - (76/226)*eta)
+        spin2z = 0
+
+    return eta, spin1z, spin2z
+
+def test_physical_point(v, flow_cond_dict):
+    '''Will return a binary statement. `True` if point is physical.'''
+
+    flag = True
+    eta, spin1z, spin2z = convert_to_eta_chi1chi2(v, flow_cond_dict)
+    
+    if eta > 0.25:
+        flag = False
+    
+    if spin1z > 1 and spin2z > 1:
+        flag = False
+
+    return flag
 
 def _initialize_live_points(live_points,
                             prior_transform,
                             loglikelihood,
                             M,
+                            flow_cond_dict,
                             nlive=None,
                             ndim=None,
                             rstate=None,
                             blob=False,
                             use_pool_ptform=None):
+    # print('Function called: _initialize_live_points (dynamicsampler.py)')
     """
     Initialize the first set of live points before starting the sampling
 
@@ -427,14 +467,33 @@ def _initialize_live_points(live_points,
         iattempt = 0
         while True:
             iattempt += 1
+            
+            counter = 0
+            temp = True
+            while temp:
+                # simulate nlive points by uniform sampling
+                _cur_live_u = rstate.random(size=(nlive, ndim))
+                if use_pool_ptform:
+                    _cur_live_v = M(prior_transform, np.asarray(_cur_live_u))
+                else:
+                    _cur_live_v = map(prior_transform, np.asarray(_cur_live_u))
+                _cur_live_v = np.array(list(_cur_live_v))
 
-            # simulate nlive points by uniform sampling
-            cur_live_u = rstate.random(size=(nlive, ndim))
-            if use_pool_ptform:
-                cur_live_v = M(prior_transform, np.asarray(cur_live_u))
-            else:
-                cur_live_v = map(prior_transform, np.asarray(cur_live_u))
-            cur_live_v = np.array(list(cur_live_v))
+                ## identify physical v's.
+                physical_ids = []
+                for point_idx in range(len(_cur_live_v)):
+                    physical_ids.append(test_physical_point(_cur_live_v[point_idx], flow_cond_dict))
+                    
+                if counter == 0:
+                    cur_live_u = _cur_live_u[physical_ids]
+                    cur_live_v = _cur_live_v[physical_ids]
+                else:
+                    cur_live_u = np.append(cur_live_u, _cur_live_u[physical_ids], axis = 0)
+                    cur_live_v = np.append(cur_live_v, _cur_live_v[physical_ids], axis = 0)
+                counter += 1
+                if len(cur_live_u) >= nlive:
+                    temp = False
+            
             cur_live_logl = loglikelihood.map(np.asarray(cur_live_v))
             if blob:
                 cur_live_blobs = np.array([_.blob for _ in cur_live_logl])
@@ -542,6 +601,7 @@ def _configure_batch_sampler(main_sampler,
                              update_interval,
                              logl_bounds=None,
                              save_bounds=None):
+    # print('Function called: _configure_batch_sampler (dynamicsampler.py)')
     """
     This is a utility method that construct a new internal
     sampler that will sample one batch.

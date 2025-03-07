@@ -144,6 +144,7 @@ Sampling Method:\n===============
 
 
 def _get_auto_sample(ndim, gradient):
+    # print('Function called : _get_auto_sample (from dynesty.py)')
     """ Decode which sampling method to use
 
     Arguments:
@@ -164,6 +165,7 @@ def _get_auto_sample(ndim, gradient):
 
 
 def _get_walks_slices(walks0, slices0, sample, ndim):
+    # print('Function called : _get_walks_slices (from dynesty.py)')
     """
     Get the best number of steps for random walk/slicing based on
     the type of sampler and dimension
@@ -197,6 +199,7 @@ def _get_walks_slices(walks0, slices0, sample, ndim):
 
 
 def _parse_pool_queue(pool, queue_size):
+    # print('Function called : _parse_pool_queue (from dynesty.py)')
     """
     Common functionality of interpretign the pool and queue_size
     arguments to Dynamic and static nested samplers
@@ -223,6 +226,7 @@ def _parse_pool_queue(pool, queue_size):
 
 
 def _check_first_update(first_update):
+    # print('Function called : _check_first_update (from dynesty.py)')
     """
     Verify that the first_update dictionary is valid
     Specifically that it doesn't have unrecognized keywords
@@ -231,8 +235,8 @@ def _check_first_update(first_update):
         if k not in ['min_ncall', 'min_eff']:
             raise ValueError('Unrecognized keywords in first_update')
 
-
 def _assemble_sampler_docstring(dynamic):
+    # print('Function called : _assemble_sampler_docstring (from dynesty.py)')
     """
     Assemble the docstring for the NestedSampler and DynamicNestedSampler
     We do that to avoid duplicating the parameter descriptions
@@ -504,7 +508,6 @@ optional
     else:
         return static_docstring
 
-
 class NestedSampler(SuperSampler):
     """
     The main class performing the static nested sampling.
@@ -515,6 +518,7 @@ class NestedSampler(SuperSampler):
                 loglikelihood,
                 prior_transform,
                 ndim,
+                flow_cond_dict,
                 nlive=500,
                 bound='multi',
                 sample='auto',
@@ -682,6 +686,7 @@ functioning and will be removed in further releases""", DeprecationWarning)
             ptform,
             loglike,
             M,
+            flow_cond_dict,
             nlive=nlive,
             ndim=ndim,
             rstate=rstate,
@@ -701,13 +706,13 @@ functioning and will be removed in further releases""", DeprecationWarning)
                          queue_size,
                          pool,
                          use_pool,
+                         flow_cond_dict,
                          kwargs,
                          ncdim=ncdim,
                          blob=blob,
                          logvol_init=logvol_init)
         sampler.ncalls = init_ncalls
         return sampler
-
 
 NestedSampler.__new__.__doc__ = _assemble_sampler_docstring(False)
 NestedSampler.__init__.__doc__ = _assemble_sampler_docstring(False)
@@ -755,7 +760,7 @@ class DynamicNestedSampler(DynamicSampler):
                  blob=False,
                  save_history=False,
                  history_filename=None):
-
+        
         # Prior dimensions.
         if npdim is not None:
             if npdim != ndim:

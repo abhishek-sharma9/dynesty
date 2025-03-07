@@ -17,7 +17,7 @@ from .sampling import sample_unif, SamplerArgument
 from .utils import (get_seed_sequence, get_print_func, progress_integration,
                     IteratorResult, RunRecord, get_neff_from_logwt,
                     compute_integrals, DelayTimer, _LOWL_VAL)
-
+from .conversion_relation import *
 __all__ = ["Sampler"]
 
 
@@ -79,10 +79,13 @@ class Sampler:
                  queue_size,
                  pool,
                  use_pool,
+                 flow_cond_dict,
                  ncdim,
                  logvol_init=0,
                  blob=False):
-
+        # print('Class called: Sampler (from sampler.py)')
+        # Argument added to restrict proposals.
+        self.flow_cond_dict = flow_cond_dict
         # distributions
         self.loglikelihood = loglikelihood
         self.prior_transform = prior_transform
@@ -157,26 +160,33 @@ class Sampler:
         self.saved_run = RunRecord()
 
     def save(self, fname):
+        # print('Class: Sampler, method: save (from sampler.py)')
         raise RuntimeError('Should be overriden')
 
     def propose_point(self, *args):
+        # print('Class: Sampler, method: propose_point (from sampler.py)')
         raise RuntimeError('Should be overriden')
 
     def evolve_point(self, *args):
+        # print('Class: Sampler, method: evolve_point (from sampler.py)')
         raise RuntimeError('Should be overriden')
 
     def update_proposal(self, *args, **kwargs):
+        # print('Class: Sampler, Method: update_proposal (from sampler.py)')
         raise RuntimeError('Should be overriden')
 
     def update(self, subset=None):
+        # print('Class: Sampler, Method: update (from sampler.py)')
         raise RuntimeError('Should be overriden')
 
     def __setstate__(self, state):
+        # print('Class: Sampler, Method: __setstate__ (from sampler.py)')
         self.__dict__ = state
         self.pool = None
         self.M = map
 
     def __getstate__(self):
+        print('Class: Sampler, Method: __getstate__ (from sampler.py)')
         """Get state information for pickling."""
 
         state = self.__dict__.copy()
@@ -186,6 +196,7 @@ class Sampler:
         return state
 
     def reset(self):
+        # print('Class: Sampler, Method: reset (from sampler.py)')
         """Re-initialize the sampler."""
 
         # live points
@@ -227,6 +238,7 @@ class Sampler:
 
     @property
     def results(self):
+        # print('Class: Sampler, Method: propose_point (from sampler.py)')
         """Saved results from the nested sampling run. If bounding
         distributions were saved, those are also returned."""
 
@@ -267,6 +279,7 @@ class Sampler:
 
     @property
     def n_effective(self):
+        # print('Class: Sampler, Method: n_effective (from sampler.py)')
         """
         Estimate the effective number of posterior samples using the Kish
         Effective Sample Size (ESS) where `ESS = sum(wts)^2 / sum(wts^2)`.
@@ -292,6 +305,7 @@ class Sampler:
         return self.cite
 
     def update_bound_if_needed(self, loglstar, ncall=None, force=False):
+        # print('Class: Sampler, Method: update_bound_if_needed (from sampler.py)')
         """
         Here we update the bound depending on the situation
         The arguments are the loglstar and number of calls
@@ -334,6 +348,7 @@ class Sampler:
                 self.logl_first_update = loglstar
 
     def _fill_queue(self, loglstar):
+        # print('Class: Sampler, Method: _fill_queue (from sampler.py)')
         """Sequentially add new live point proposals to the queue."""
 
         # All the samplers should have have a starting point
@@ -341,6 +356,10 @@ class Sampler:
         # The slice sampler will just fail if it's not the case
         # therefore we provide those subsets of points to choose from.
 
+        # print(f'method = {self.method}, unit_cube_sampling = {self.unit_cube_sampling}, evolve_point = {self.evolve_point}')
+        # print(f'nqueue = {self.nqueue}, queue_size = {self.queue_size}, ncdim = {self.ncdim}')
+        
+        ## self.live_logl : list of logl values at live points.
         if self.method != 'unif':
             args = (np.nonzero(self.live_logl > loglstar)[0], )
             if len(args[0]) == 0:
@@ -365,12 +384,16 @@ class Sampler:
         else:
             # Propose/evaluate points directly from the unit cube.
             point_queue = self.rstate.random(size=(self.queue_size -
-                                                   self.nqueue, self.ndim))
+                                                       self.nqueue, self.ndim))
             axes_queue = np.identity(
                 self.ncdim)[None, :, :] + np.zeros(self.queue_size -
                                                    self.nqueue)[:, None, None]
             evolve_point = sample_unif
             self.nqueue = self.queue_size
+            
+        # print(f'point_queue = {point_queue}')
+        # print(f'axes_queue = {axes_queue}\n')
+        
         if self.queue_size > 1:
             seeds = get_seed_sequence(self.rstate, self.queue_size)
         else:
@@ -393,10 +416,12 @@ class Sampler:
                                 prior_transform=self.prior_transform,
                                 loglikelihood=self.loglikelihood,
                                 rseed=seeds[i],
+                                flow_cond_dict=self.flow_cond_dict,
                                 kwargs=self.kwargs))
         self.queue = list(mapper(evolve_point, args))
 
     def _get_point_value(self, loglstar):
+        # print('Class: Sampler, Method: _get_point_value (from sampler.py)')
         """Grab the first live point proposal in the queue."""
 
         # If the queue is empty, refill it.
@@ -409,8 +434,44 @@ class Sampler:
         self.nqueue -= 1
 
         return u, v, logl, nc, blob
+    
+    def convert_to_eta_chi1chi2(self, v):
+
+        theta0, theta3, theta3s = v[:3]
+        mtotal, eta = mtotal_eta_from_tau0_tau3(theta0/(2*np.pi*self.flow_cond_dict['flow']), theta3/(2*np.pi*self.flow_cond_dict['flow']), self.flow_cond_dict['flow'])
+        mass1, mass2 = mass1_mass2_from_mtotal_eta(mtotal, eta)
+
+        delta = (mass1 - mass2)/(mass1 + mass2)
+        chi_r = (48*np.pi/113) * (theta3s/theta3)
+
+        if self.flow_cond_dict['condition'] == 'equal_spins':
+            spin1z = chi_r / (1 - (76/113)*eta)
+            spin2z = spin1z
+
+        elif self.flow_cond_dict['condition'] == 'zero_secondary':
+
+            spin1z = chi_r / (0.5 + 0.5*delta - (76/226)*eta)
+            spin2z = 0
+
+        return eta, spin1z, spin2z
+
+    def test_physical_point(self, v):
+        '''Will return a binary statement. `False` if point is physical.'''
+
+        flag = False
+        eta, spin1z, spin2z = self.convert_to_eta_chi1chi2(v)
+
+        if eta > 0.25:
+            flag = True
+
+        if spin1z > 1 and spin2z > 1:
+            flag = True
+
+        return flag
 
     def _new_point(self, loglstar):
+        # print('Class: Sampler, Method: _new_point (from sampler.py)')
+        
         """Propose points until a new point that satisfies the log-likelihood
         constraint `loglstar` is found."""
 
@@ -445,6 +506,7 @@ class Sampler:
         return u, v, logl, ncall_accum
 
     def add_live_points(self):
+        # print('Class: Sampler, Method: add_live_points (from sampler.py)')
         """Add the remaining set of live points to the current set of dead
         points. Instantiates a generator that will be called by
         the user. Returns the same outputs as :meth:`sample`."""
@@ -580,6 +642,7 @@ class Sampler:
                                  delta_logz=delta_logz)
 
     def _remove_live_points(self):
+        # print('Class: Sampler, Method: _remove_live_points (from sampler.py)')
         """Remove the final set of live points if they were
         previously added to the current set of dead points."""
 
@@ -606,6 +669,7 @@ class Sampler:
                save_bounds=True,
                save_samples=True,
                resume=False):
+        # print('Class: Sampler, Method: sample (from sampler.py)')
         """
         **The main nested sampling loop.** Iteratively replace the worst live
         point with a sample drawn uniformly from the prior until the
@@ -930,6 +994,7 @@ class Sampler:
                    checkpoint_file=None,
                    checkpoint_every=60,
                    resume=False):
+        # print('Class: Sampler, Method: run_nested (from sampler.py)')
         """
         **A wrapper that executes the main nested sampling loop.**
         Iteratively replace the worst live point with a sample drawn
@@ -1078,6 +1143,7 @@ class Sampler:
             self.loglikelihood.history_save()
 
     def add_final_live(self, print_progress=True, print_func=None):
+        # print('Class: Sampler, Method: add_final_live (from sampler.py)')
         """
         **A wrapper that executes the loop adding the final live points.**
         Adds the final set of live points to the pre-existing sequence of
