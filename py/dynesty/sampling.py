@@ -24,112 +24,93 @@ __all__ = [
 
 SamplerArgument = namedtuple('SamplerArgument', [
     'u', 'loglstar', 'axes', 'scale', 'prior_transform', 'loglikelihood',
-    'rseed', 'kwargs', 'flow_cond_dict'
+    'rseed', 'kwargs', 'add_params_dict'
 ])
 
-# def sample_unif(args):
-#     print('Function call: sample_unif (sampling.py)')
+def convert_to_eta_chi1chi2(v, add_params_dict):
     
-#     """
-#     Evaluate a new point sampled uniformly from a bounding proposal
-#     distribution. Parameters are zipped within `args` to utilize
-#     `pool.map`-style functions.
-
-#     Parameters
-#     ----------
-#     u : `~numpy.ndarray` with shape (ndim,)
-#         Position of the initial sample.
-
-#     loglstar : float
-#         Ln(likelihood) bound. **Not applicable here.**
-
-#     axes : `~numpy.ndarray` with shape (ndim, ndim)
-#         Axes used to propose new points. **Not applicable here.**
-
-#     scale : float
-#         Value used to scale the provided axes. **Not applicable here.**
-
-#     prior_transform : function
-#         Function transforming a sample from the a unit cube to the parameter
-#         space of interest according to the prior.
-
-#     loglikelihood : function
-#         Function returning ln(likelihood) given parameters as a 1-d `~numpy`
-#         array of length `ndim`.
-
-#     kwargs : dict
-#         A dictionary of additional method-specific parameters.
-#         **Not applicable here.**
-
-#     Returns
-#     -------
-#     u : `~numpy.ndarray` with shape (ndim,)
-#         Position of the final proposed point within the unit cube. **For
-#         uniform sampling this is the same as the initial input position.**
-
-#     v : `~numpy.ndarray` with shape (ndim,)
-#         Position of the final proposed point in the target parameter space.
-
-#     logl : float
-#         Ln(likelihood) of the final proposed point.
-
-#     nc : int
-#         Number of function calls used to generate the sample. For uniform
-#         sampling this is `1` by construction.
-
-#     blob : dict
-#         Collection of ancillary quantities used to tune :data:`scale`. **Not
-#         applicable for uniform sampling.**
-
-#     """
-
-#     # Unzipping.
-
-#     # Evaluate.
-#     v = args.prior_transform(np.asarray(args.u))
-#     logl = args.loglikelihood(np.asarray(v))
-#     nc = 1
-#     blob = None
-
-#     return args.u, v, logl, nc, blob
-
-def convert_to_eta_chi1chi2(v, flow_cond_dict):
+    flow = add_params_dict['flow']
+    ## Transform points from eigenbasis to adopted coord system...
+    del_theta = add_params_dict['eigvec'] @ v[:4]
     
-    theta0, theta3, theta3s = v[:3]
-    mtotal, eta = mtotal_eta_from_tau0_tau3(theta0/(2*np.pi*flow_cond_dict['flow']), theta3/(2*np.pi*flow_cond_dict['flow']), flow_cond_dict['flow'])
-    mass1, mass2 = mass1_mass2_from_mtotal_eta(mtotal, eta)
-
+    theta0 = del_theta[0] + add_params_dict['center'][0]
+    theta3 = del_theta[1] + add_params_dict['center'][1]
+    theta3s = del_theta[2] + add_params_dict['center'][2]
+    p4 = del_theta[3] + add_params_dict['center'][3]
+    
+    mass1, mass2, eta = mass1_mass2_eta_from_tau0_tau3(theta0/(2*np.pi*flow), theta3/(2*np.pi*flow), flow)
+    
     delta = (mass1 - mass2)/(mass1 + mass2)
-    chi_r = (48*np.pi/113) * (theta3s/theta3)
+    mtotal = mass1+mass2
+    
+    A = 384*np.pi*flow*eta*mtotal/(113 * (2*np.pi*flow)*(np.pi*mtotal*lal.MTSUN_SI*flow)**(-2/3))
+    spin1z = (A * (113 *(delta-1)+76*eta) * p4*theta3\
+              + 96*mass2*np.pi*theta3s)/ ((113 *(delta-1)*mass1 + 76*eta*mass1+113*(delta+1)*mass2 - 76*eta*mass2)*theta3)
 
-    if flow_cond_dict['condition'] == 'equal_spins':
-        spin1z = chi_r / (1 - (76/113)*eta)
-        spin2z = spin1z
-
-    elif flow_cond_dict['condition'] == 'zero_secondary':
-
-        spin1z = chi_r / (0.5 + 0.5*delta - (76/226)*eta)
-        spin2z = 0
-
+    spin2z = (A * (113 *(delta+1)-76*eta) * p4*theta3\
+              - 96*mass1*np.pi*theta3s)/ ((113 *(delta-1)*mass1 + 76*eta*mass1+113*(delta+1)*mass2 - 76*eta*mass2)*theta3)
+    
     return eta, spin1z, spin2z
 
-def test_physical_point(v, flow_cond_dict):
+# def test_physical_point(v, add_params_dict):
+    
+#     '''Will return a binary statement. `False` if point is physical.'''
+#     flag = False
+#     if add_params_dict['prior_over_e3'] == 'Gaussian':
+#         if v[3] > add_params_dict['e3_upper_bound'] or v[3] < add_params_dict['e3_lower_bound']:
+#             flag = True
+#             return flag
+#     eta, spin1z, spin2z = convert_to_eta_chi1chi2(v, add_params_dict)
+    
+#     if eta > 0.25:
+#         flag = True
+    
+#     if abs(spin1z) > 1 or abs(spin2z) > 1:
+#         flag = True
+
+#     if flag == False:
+#          with open(add_params_dict['proposal_filepath'], 'a') as f:
+#             f.write('%0.6f %0.6f %0.6f %0.6f\n'%(v[0], v[1], v[2], v[3]))
+#     return flag
+
+def test_physical_point(v, add_params_dict):
+    
     '''Will return a binary statement. `False` if point is physical.'''
-
     flag = False
-    eta, spin1z, spin2z = convert_to_eta_chi1chi2(v, flow_cond_dict)
-
+    
+    ## First check whether the point belongs to the ellipse.
+    if v[:4].T @ add_params_dict['eigen_metric'] @ v[:4] > 1:
+        flag = True
+        return flag
+    
+    if add_params_dict['priors'] == 'Gaussian':
+        if v[0] > add_params_dict['e0_upper_bound'] or v[0] < add_params_dict['e0_lower_bound']:
+            flag = True
+            return flag
+        if v[1] > add_params_dict['e1_upper_bound'] or v[1] < add_params_dict['e1_lower_bound']:
+            flag = True
+            return flag
+        if v[2] > add_params_dict['e2_upper_bound'] or v[2] < add_params_dict['e2_lower_bound']:
+            flag = True
+            return flag
+        if v[3] > add_params_dict['e3_upper_bound'] or v[3] < add_params_dict['e3_lower_bound']:
+            flag = True
+            return flag
+    
+    eta, spin1z, spin2z = convert_to_eta_chi1chi2(v, add_params_dict)
+    
     if eta > 0.25:
         flag = True
-
-    if spin1z > 1 and spin2z > 1:
+    
+    if abs(spin1z) > 1 or abs(spin2z) > 1:
         flag = True
 
+    if flag == False:
+         with open(add_params_dict['proposal_filepath'], 'a') as f:
+            f.write('%0.6f %0.6f %0.6f %0.6f\n'%(v[0], v[1], v[2], v[3]))
     return flag
 
 def sample_unif(args):
-    # print('Function call: sample_unif (sampling.py)')
-    
     """
     Evaluate a new point sampled uniformly from a bounding proposal
     distribution. Parameters are zipped within `args` to utilize
@@ -182,6 +163,7 @@ def sample_unif(args):
         applicable for uniform sampling.**
 
     """
+
     # Unzipping.
     rstate = get_random_generator(args.rseed)
     # Evaluate.
@@ -193,7 +175,7 @@ def sample_unif(args):
         else:
             u = rstate.random(size=len(args.u))
             v = args.prior_transform(np.asarray(u))
-        temp = test_physical_point(v, args.flow_cond_dict)
+        temp = test_physical_point(v, args.add_params_dict)
         count+=1
     logl = args.loglikelihood(np.asarray(v))
     nc = 1
@@ -204,8 +186,8 @@ def sample_unif(args):
     else:
         return u, v, logl, nc, blob
 
+
 def sample_rwalk(args):
-    # print('Function call: sample_rwalk (sampling.py)')
     """
     Return a new live point proposed by random walking away from an
     existing live point.
@@ -256,15 +238,16 @@ def sample_rwalk(args):
         Collection of ancillary quantities used to tune :data:`scale`.
 
     """
+
     # Unzipping.
     rstate = get_random_generator(args.rseed)
     return generic_random_walk(args.u, args.loglstar, args.axes, args.scale,
                                args.prior_transform, args.loglikelihood,
-                               rstate, args.flow_cond_dict, args.kwargs)
+                               rstate, args.add_params_dict, args.kwargs)
+
 
 def generic_random_walk(u, loglstar, axes, scale, prior_transform,
-                        loglikelihood, rstate, flow_cond_dict, kwargs):
-    # print('Function call: generic_random_walk (sampling.py)')
+                        loglikelihood, rstate, add_params_dict, kwargs):
     """
     Generic random walk step
     Parameters
@@ -336,7 +319,7 @@ def generic_random_walk(u, loglstar, axes, scale, prior_transform,
 
     # Here we loop for exactly walks iterations.
     while ncall < walks:
-        
+
         ## Physicality check.
         temp = True
         while temp:
@@ -359,14 +342,14 @@ def generic_random_walk(u, loglstar, axes, scale, prior_transform,
                 
             # Check proposed point.
             v_prop = prior_transform(u_prop)
-            temp = test_physical_point(v_prop, flow_cond_dict)
+            temp = test_physical_point(v_prop, add_params_dict)
             # print(f'Whether physical = {not temp}')
         
         if fail:
             nreject += 1
             ncall += 1
             continue
-                
+            
         logl_prop = loglikelihood(v_prop)
         ncall += 1
 
@@ -388,6 +371,7 @@ def generic_random_walk(u, loglstar, axes, scale, prior_transform,
 
     return u, v, logl, ncall, blob
 
+
 def propose_ball_point(u,
                        scale,
                        axes,
@@ -397,7 +381,6 @@ def propose_ball_point(u,
                        periodic=None,
                        reflective=None,
                        nonbounded=None):
-    # print('Function call: propose_ball_point (sampling.py)')
     """
     Here we are proposing points uniformly within an n-d ellipsoid.
     We are only trying once.
@@ -405,6 +388,7 @@ def propose_ball_point(u,
     1) proposed point or None
     2) failure flag (if True, the generated point was outside bounds)
     """
+
     # starting point for clustered dimensions
     u_cluster = u[:n_cluster]
 
@@ -438,7 +422,6 @@ def propose_ball_point(u,
 
 
 def _slice_doubling_accept(x1, F, loglstar, L, R, fL, fR):
-    # print('Function call: _slice_doubling_accept (sampling.py)')
     """
     Acceptance test of slice sampling when doubling mode is used.
     This is an exact implementation of algorithm 6 of Neal 2003
@@ -477,7 +460,6 @@ def _slice_doubling_accept(x1, F, loglstar, L, R, fL, fR):
 
 def generic_slice_step(u, direction, nonperiodic, loglstar, loglikelihood,
                        prior_transform, doubling, rstate):
-    # print('Function call: generic_slice_step (sampling.py)')
     """
     Do a slice generic slice sampling step along a specified dimension
 
@@ -603,8 +585,8 @@ def generic_slice_step(u, direction, nonperiodic, loglstar, loglikelihood,
     v_prop = prior_transform(u_prop)
     return u_prop, v_prop, logl_prop, nc, nexpand, ncontract, expansion_warning
 
+
 def sample_slice(args):
-    # print('Function call: sample_slice (sampling.py)')
     """
     Return a new live point proposed by a series of random slices
     away from an existing live point. Standard "Gibs-like" implementation where
@@ -715,7 +697,6 @@ def sample_slice(args):
 
 
 def sample_rslice(args):
-    # print('Function call: sample_rslice (sampling.py)')
     """
     Return a new live point proposed by a series of random slices
     away from an existing live point. Standard "random" implementation where
@@ -819,7 +800,6 @@ def sample_rslice(args):
 
 
 def sample_hslice(args):
-    # print('Function call: sample_hslice (sampling.py)')
     """
     Return a new live point proposed by "Hamiltonian" Slice Sampling
     using a series of random trajectories away from an existing live point.

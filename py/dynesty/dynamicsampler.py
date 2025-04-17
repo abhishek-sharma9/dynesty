@@ -95,7 +95,6 @@ wrong with your likelihood.''')
 
 
 def weight_function(results, args=None, return_weights=False):
-    # print('Function called: weight_function (dynamicsampler.py)')
     """
     The default weight function utilized by :class:`DynamicSampler`.
     Zipped parameters are passed to the function via :data:`args`.
@@ -186,7 +185,6 @@ def weight_function(results, args=None, return_weights=False):
 
 def _get_update_interval_ratio(update_interval, sample, bound, ndim, nlive,
                                slices, walks):
-    # print('Function called: _get_update_interval_ratio (dynamicsampler.py)')
     """
     Get the update_interval divided by the number of live points
     """
@@ -222,7 +220,6 @@ def stopping_function(results,
                       rstate=None,
                       M=None,
                       return_vals=False):
-    # print('Function called: stopping_function (dynamicsampler.py)')
     """
     The default stopping function utilized by :class:`DynamicSampler`.
     Zipped parameters are passed to the function via :data:`args`.
@@ -344,51 +341,92 @@ def stopping_function(results,
     else:
         return stop <= 1.
 
-def convert_to_eta_chi1chi2(v, flow_cond_dict):
+def convert_to_eta_chi1chi2(v, add_params_dict):
     
-    theta0, theta3, theta3s = v[:3]
-    mtotal, eta = mtotal_eta_from_tau0_tau3(theta0/(2*np.pi*flow_cond_dict['flow']), theta3/(2*np.pi*flow_cond_dict['flow']), flow_cond_dict['flow'])
-    mass1, mass2 = mass1_mass2_from_mtotal_eta(mtotal, eta)
-
+    flow = add_params_dict['flow']
+    ## Transform points from eigenbasis to adopted coord system...
+    del_theta = add_params_dict['eigvec'] @ v[:4]
+    
+    theta0 = del_theta[0] + add_params_dict['center'][0]
+    theta3 = del_theta[1] + add_params_dict['center'][1]
+    theta3s = del_theta[2] + add_params_dict['center'][2]
+    p4 = del_theta[3] + add_params_dict['center'][3]
+    
+    mass1, mass2, eta = mass1_mass2_eta_from_tau0_tau3(theta0/(2*np.pi*flow), theta3/(2*np.pi*flow), flow)
+    
     delta = (mass1 - mass2)/(mass1 + mass2)
-    chi_r = (48*np.pi/113) * (theta3s/theta3)
+    mtotal = mass1+mass2
+    
+    A = 384*np.pi*flow*eta*mtotal/(113 * (2*np.pi*flow)*(np.pi*mtotal*lal.MTSUN_SI*flow)**(-2/3))
+    spin1z = (A * (113 *(delta-1)+76*eta) * p4*theta3\
+              + 96*mass2*np.pi*theta3s)/ ((113 *(delta-1)*mass1 + 76*eta*mass1+113*(delta+1)*mass2 - 76*eta*mass2)*theta3)
 
-    if flow_cond_dict['condition'] == 'equal_spins':
-        spin1z = chi_r / (1 - (76/113)*eta)
-        spin2z = spin1z
-
-    elif flow_cond_dict['condition'] == 'zero_secondary':
-
-        spin1z = chi_r / (0.5 + 0.5*delta - (76/226)*eta)
-        spin2z = 0
-
+    spin2z = (A * (113 *(delta+1)-76*eta) * p4*theta3\
+              - 96*mass1*np.pi*theta3s)/ ((113 *(delta-1)*mass1 + 76*eta*mass1+113*(delta+1)*mass2 - 76*eta*mass2)*theta3)
+    
     return eta, spin1z, spin2z
 
-def test_physical_point(v, flow_cond_dict):
+# def test_physical_point(v, add_params_dict):
+#     '''Will return a binary statement. `True` if point is physical.'''
+
+#     flag = True
+#     if add_params_dict['prior_over_e3'] == 'Gaussian':
+#         if v[3] > add_params_dict['e3_upper_bound'] or v[3] < add_params_dict['e3_lower_bound']:
+#             flag = False
+#             return flag
+#     eta, spin1z, spin2z = convert_to_eta_chi1chi2(v, add_params_dict)
+    
+#     if eta > 0.25:
+#         flag = False
+    
+#     if abs(spin1z) > 1 or abs(spin2z) > 1:
+#         flag = False
+        
+#     return flag
+
+def test_physical_point(v, add_params_dict):
     '''Will return a binary statement. `True` if point is physical.'''
 
     flag = True
-    eta, spin1z, spin2z = convert_to_eta_chi1chi2(v, flow_cond_dict)
+    
+    ## First check whether the point belongs to the ellipse.
+    if v[:4].T @ add_params_dict['eigen_metric'] @ v[:4] > 1:
+        flag = False
+        return flag
+    
+    if add_params_dict['priors'] == 'Gaussian':
+        if v[0] > add_params_dict['e0_upper_bound'] or v[0] < add_params_dict['e0_lower_bound']:
+            flag = False
+            return flag
+        if v[1] > add_params_dict['e1_upper_bound'] or v[1] < add_params_dict['e1_lower_bound']:
+            flag = False
+            return flag
+        if v[2] > add_params_dict['e2_upper_bound'] or v[2] < add_params_dict['e2_lower_bound']:
+            flag = False
+            return flag
+        if v[3] > add_params_dict['e3_upper_bound'] or v[3] < add_params_dict['e3_lower_bound']:
+            flag = False
+            return flag
+    eta, spin1z, spin2z = convert_to_eta_chi1chi2(v, add_params_dict)
     
     if eta > 0.25:
         flag = False
     
-    if spin1z > 1 and spin2z > 1:
+    if abs(spin1z) > 1 or abs(spin2z) > 1:
         flag = False
-
+        
     return flag
 
 def _initialize_live_points(live_points,
                             prior_transform,
                             loglikelihood,
                             M,
-                            flow_cond_dict,
+                            add_params_dict,
                             nlive=None,
                             ndim=None,
                             rstate=None,
                             blob=False,
                             use_pool_ptform=None):
-    # print('Function called: _initialize_live_points (dynamicsampler.py)')
     """
     Initialize the first set of live points before starting the sampling
 
@@ -482,7 +520,7 @@ def _initialize_live_points(live_points,
                 ## identify physical v's.
                 physical_ids = []
                 for point_idx in range(len(_cur_live_v)):
-                    physical_ids.append(test_physical_point(_cur_live_v[point_idx], flow_cond_dict))
+                    physical_ids.append(test_physical_point(_cur_live_v[point_idx], add_params_dict))
                     
                 if counter == 0:
                     cur_live_u = _cur_live_u[physical_ids]
@@ -493,7 +531,7 @@ def _initialize_live_points(live_points,
                 counter += 1
                 if len(cur_live_u) >= nlive:
                     temp = False
-            
+                    
             cur_live_logl = loglikelihood.map(np.asarray(cur_live_v))
             if blob:
                 cur_live_blobs = np.array([_.blob for _ in cur_live_logl])
@@ -593,6 +631,9 @@ def _initialize_live_points(live_points,
             RuntimeWarning)
     if not blob:
         live_blobs = None
+    # print(live_v.shape, live_logl.shape)
+    # np.save('/home/sharma.abhishek/work/hm_analysis/hm_dev/rbf_interpolation/4D-interpolation-match-contour/numerical_metric/pe_thetacoords/pe/live_points.npy',\
+    #         np.column_stack((live_v, live_logl)))
     return (live_u, live_v, live_logl, live_blobs), logvol_init, ncalls
 
 
@@ -601,7 +642,6 @@ def _configure_batch_sampler(main_sampler,
                              update_interval,
                              logl_bounds=None,
                              save_bounds=None):
-    # print('Function called: _configure_batch_sampler (dynamicsampler.py)')
     """
     This is a utility method that construct a new internal
     sampler that will sample one batch.

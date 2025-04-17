@@ -898,7 +898,6 @@ def get_neff_from_logwt(logwt):
 
 
 def unitcheck(u, nonbounded=None):
-    # print('Function call: unitcheck (from utils.py)')
     """Check whether `u` is inside the unit cube. Given a masked array
     `nonbounded`, also allows periodic boundaries conditions to exceed
     the unit cube."""
@@ -916,7 +915,6 @@ def unitcheck(u, nonbounded=None):
 
 
 def apply_reflect(u):
-    print('Function call: apply_reflect (from utils.py)')
     """
     Iteratively reflect a number until it is contained in [0, 1].
 
@@ -945,7 +943,6 @@ def apply_reflect(u):
 
 
 def mean_and_cov(samples, weights):
-    print('Function call: mean_and_cov (from utils.py)')
     """
     Compute the weighted mean and covariance of the samples.
 
@@ -985,7 +982,6 @@ def mean_and_cov(samples, weights):
 
 
 def resample_equal(samples, weights, rstate=None):
-    print('Function call: resample_equal (from utils.py)')
     """
     Resample a set of points from the weighted set of inputs
     such that they all have equal weight. The points are also
@@ -1056,7 +1052,6 @@ def resample_equal(samples, weights, rstate=None):
 
 
 def quantile(x, q, weights=None):
-    print('Function call: quantile (from utils.py)')
     """
     Compute (weighted) quantiles from an input set of samples.
 
@@ -1104,7 +1099,6 @@ def quantile(x, q, weights=None):
 
 
 def _get_nsamps_samples_n(res):
-    print('Function call: _get_nsamps_samples_n (from utils.py)')
     """ Helper function for calculating the number of samples
 
     Parameters
@@ -1141,7 +1135,6 @@ def _get_nsamps_samples_n(res):
 
 
 def _find_decrease(samples_n):
-    print('Function call: _find_decrease (from utils.py)')
     """
     Find all instances where the number of live points is either constant
     or increasing.
@@ -1153,7 +1146,7 @@ def _find_decrease(samples_n):
     (array([ True, False, False,  True,  True, False,  True, False]),
     [3, 13, 23],
     [[0, 3], [4, 6], (6, 8)])
-    
+
     """
     nsamps = len(samples_n)
     nlive_flag = np.zeros(nsamps, dtype=bool)
@@ -1186,7 +1179,6 @@ def _find_decrease(samples_n):
 
 
 def jitter_run(res, rstate=None, approx=False):
-    print('Function call: jitter_run (from utils.py)')
     """
     Probes **statistical uncertainties** on a nested sampling run by
     explicitly generating a *realization* of the prior volume associated
@@ -1281,7 +1273,6 @@ def jitter_run(res, rstate=None, approx=False):
 
 
 def compute_integrals(logl=None, logvol=None, reweight=None):
-    print('Function call: compute_integrals (from utils.py)')
     """
     Compute weights, logzs and variances using quadratic estimator.
     Returns logwt, logz, logzvar, h
@@ -1343,9 +1334,9 @@ def compute_integrals(logl=None, logvol=None, reweight=None):
     saved_logzvar = np.abs(np.cumsum(dh * dlogvol))
     return saved_logwt, saved_logz, saved_logzvar, saved_h
 
+
 def progress_integration(loglstar, loglstar_new, logz, logzvar, logvol,
                          dlogvol, h):
-    # print('Function call: progress_integration (from utils.py)')
     """
     This is the calculation of weights and logz/var estimates one step at the
     time.
@@ -1370,7 +1361,6 @@ def progress_integration(loglstar, loglstar_new, logz, logzvar, logvol,
 
 
 def resample_run(res, rstate=None, return_idx=False):
-    print('Function call: resample_run (from utils.py)')
     """
     Probes **sampling uncertainties** on a nested sampling run using bootstrap
     resampling techniques to generate a *realization* of the (expected) prior
@@ -1539,7 +1529,6 @@ def resample_run(res, rstate=None, return_idx=False):
 
 
 def reweight_run(res, logp_new, logp_old=None):
-    print('Function call: reweight_run (from utils.py)')
     """
     Reweight a given run based on a new target distribution.
 
@@ -1588,7 +1577,6 @@ def reweight_run(res, logp_new, logp_old=None):
 
 
 def unravel_run(res, print_progress=True):
-    print('Function call: unravel_run (from utils.py)')
     """
     Unravels a run with `K` live points into `K` "strands" (a nested sampling
     run with only 1 live point). **WARNING: the anciliary quantities provided
@@ -1695,7 +1683,6 @@ def unravel_run(res, print_progress=True):
 
 
 def merge_runs(res_list, print_progress=True):
-    print('Function call: merge_runs (from utils.py)')
     """
     Merges a set of runs with differing (possibly variable) numbers of
     live points into one run.
@@ -1782,7 +1769,6 @@ def merge_runs(res_list, print_progress=True):
 
 
 def check_result_static(res):
-    print('Function call: check_result_static (from utils.py)')
     """ If the run was from a dynamic run but had constant
     number of live points, return a new Results object with
     nlive parameter, so we could use it as static run
@@ -1816,7 +1802,6 @@ def kld_error(res,
               rstate=None,
               return_new=False,
               approx=False):
-    print('Function call: kld_error (from utils.py)')
     """
     Computes the `Kullback-Leibler (KL) divergence
     <https://en.wikipedia.org/wiki/Kullback-Leibler_divergence>`_ *from* the
@@ -1881,7 +1866,6 @@ def kld_error(res,
 
 
 def _prepare_for_merge(res):
-    print('Function call: _prepare_for_merge (from utils.py)')
     """
     Internal method used to prepare a run for merging with another run.
     It takes the results object and it returns the dictionary with basic run
@@ -1926,7 +1910,6 @@ def _prepare_for_merge(res):
 
 
 def _merge_two(res1, res2, compute_aux=False):
-    print('Function call: _merge_two (from utils.py)')
     """
     Internal method used to merges two runs with differing (possibly variable)
     numbers of live points into one run.
@@ -2108,7 +2091,6 @@ def _merge_two(res1, res2, compute_aux=False):
 
 
 def _kld_error(args):
-    print('Function call: _kld_error (from utils.py)')
     """ Internal `pool.map`-friendly wrapper for :meth:`kld_error`
     used by :meth:`stopping_function`."""
 
@@ -2127,7 +2109,6 @@ def old_stopping_function(results,
                           rstate=None,
                           M=None,
                           return_vals=False):
-    print('Function call: old_stopping_function (from utils.py)')
     """
     The old stopping function utilized by :class:`DynamicSampler`.
     Zipped parameters are passed to the function via :data:`args`.
@@ -2239,7 +2220,6 @@ def old_stopping_function(results,
 
 
 def restore_sampler(fname, pool=None):
-    print('Function call: restore_sampler (from utils.py)')
     """
     Restore the dynamic sampler from a file.
     It is assumed that the file was created using .save() method
@@ -2299,7 +2279,6 @@ def restore_sampler(fname, pool=None):
 
 
 def save_sampler(sampler, fname):
-    print('Function call: save_sampler (from utils.py)')
     """
     Save the state of the dynamic sampler in a file
 

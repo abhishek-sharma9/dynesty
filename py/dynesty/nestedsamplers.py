@@ -48,6 +48,7 @@ _SAMPLING = {
     'hslice': sample_hslice
 }
 
+
 class SuperSampler(Sampler):
     """
     This is a class that provides common functionality to all the
@@ -66,12 +67,11 @@ class SuperSampler(Sampler):
                  queue_size,
                  pool,
                  use_pool,
-                 flow_cond_dict,
+                 add_params_dict,
                  kwargs=None,
                  ncdim=0,
                  blob=False,
                  logvol_init=0):
-        # print('Class called: SuperSampler (from nestedsamplers.py)')
         # Initialize sampler.
         super().__init__(loglikelihood,
                          prior_transform,
@@ -83,7 +83,7 @@ class SuperSampler(Sampler):
                          queue_size,
                          pool,
                          use_pool,
-                         flow_cond_dict,
+                         add_params_dict,
                          ncdim=ncdim,
                          blob=blob,
                          logvol_init=logvol_init)
@@ -148,20 +148,16 @@ class SuperSampler(Sampler):
         self.hslice_history = {'nmove': 0, 'nreflect': 0, 'ncontract': 0}
 
     def propose_unif(self, *args):
-        # print('Class: SuperSampler, method: propose_unif (from nestedsamplers.py)')
         pass
 
     def propose_live(self, *args):
-        # print('Class: SuperSampler, method: propose_live (from nestedsamplers.py)')
         pass
 
     def update_unif(self, blob, update=True):
-        # print('Class: SuperSampler, method: update_unif (from nestedsamplers.py)')
         """Filler function."""
         pass
 
     def update_rwalk(self, blob, update=True):
-        # print('Class: SuperSampler, method: update_rwalk (from nestedsamplers.py)')
         """Update the random walk proposal scale based on the current
         number of accepted/rejected steps.
         For rwalk the scale is important because it
@@ -197,7 +193,6 @@ class SuperSampler(Sampler):
         hist['nreject'] = 0
 
     def update_slice(self, blob, update=True):
-        # print('Class: SuperSampler, method: update_slice (from nestedsamplers.py)')
         """Update the slice proposal scale based on the relative
         size of the slices compared to our initial guess.
         For slice sampling the scale is only 'advisory' in the sense that
@@ -230,7 +225,6 @@ class SuperSampler(Sampler):
         hist['ncontract'] = 0
 
     def update_hslice(self, blob, update=True):
-        # print('Class: SuperSampler, method: update_hslice (from nestedsamplers.py)')
         """Update the Hamiltonian slice proposal scale based
         on the relative amount of time spent moving vs reflecting.
         The keyword update determines if we are just accumulating the number
@@ -252,14 +246,12 @@ class SuperSampler(Sampler):
         hist['ncontract'] = 0
 
     def update_user(self, blob, update=True):
-        # print('Class: SuperSampler, method: update_user (from nestedsamplers.py)')
         """Update the scale based on the user-defined update function."""
 
         if callable(self.custom_update):
             self.scale = self.custom_update(blob, self.scale, update=update)
 
     def save(self, fname):
-        # print('Class: SuperSampler, method: save (from nestedsamplers.py)')
         """
         Save the state of the dynamic sampler in a file
 
@@ -273,7 +265,6 @@ class SuperSampler(Sampler):
 
     @staticmethod
     def restore(fname, pool=None):
-        # print('Class: SuperSampler, method: restore (from nestedsamplers.py)')
         """
         Restore the dynamic sampler from a file.
         It is assumed that the file was created using .save() method
@@ -359,7 +350,7 @@ class UnitCubeSampler(SuperSampler):
                  queue_size,
                  pool,
                  use_pool,
-                 flow_cond_dict,
+                 add_params_dict,
                  kwargs=None,
                  ncdim=0,
                  blob=False,
@@ -377,7 +368,7 @@ class UnitCubeSampler(SuperSampler):
                          queue_size,
                          pool,
                          use_pool,
-                         flow_cond_dict,
+                         add_params_dict,
                          ncdim=ncdim,
                          blob=blob,
                          logvol_init=logvol_init,
@@ -416,6 +407,7 @@ class UnitCubeSampler(SuperSampler):
         ax = np.identity(self.ndim)
 
         return u, ax
+
 
 class SingleEllipsoidSampler(SuperSampler):
     """
@@ -470,7 +462,9 @@ class SingleEllipsoidSampler(SuperSampler):
 
     kwargs : dict, optional
         A dictionary of additional parameters.
+
     """
+
     def __init__(self,
                  loglikelihood,
                  prior_transform,
@@ -483,6 +477,7 @@ class SingleEllipsoidSampler(SuperSampler):
                  queue_size,
                  pool,
                  use_pool,
+                 add_params_dict,
                  kwargs=None,
                  blob=False,
                  logvol_init=0,
@@ -500,6 +495,7 @@ class SingleEllipsoidSampler(SuperSampler):
                          queue_size,
                          pool,
                          use_pool,
+                         add_params_dict,
                          ncdim=ncdim,
                          blob=blob,
                          logvol_init=logvol_init,
@@ -634,6 +630,7 @@ class MultiEllipsoidSampler(SuperSampler):
         A dictionary of additional parameters.
 
     """
+
     def __init__(self,
                  loglikelihood,
                  prior_transform,
@@ -646,12 +643,11 @@ class MultiEllipsoidSampler(SuperSampler):
                  queue_size,
                  pool,
                  use_pool,
-                 flow_cond_dict,
+                 add_params_dict,
                  kwargs=None,
                  blob=False,
                  logvol_init=0,
                  ncdim=0):
-        # print('Class called: MultiEllipsoidSampler (from nestedsamplers.py)')
         # Initialize sampler.
         super().__init__(loglikelihood,
                          prior_transform,
@@ -664,7 +660,7 @@ class MultiEllipsoidSampler(SuperSampler):
                          queue_size,
                          pool,
                          use_pool,
-                         flow_cond_dict,
+                         add_params_dict,
                          ncdim=ncdim,
                          blob=blob,
                          logvol_init=logvol_init,
@@ -678,7 +674,6 @@ class MultiEllipsoidSampler(SuperSampler):
         self.bounding = 'multi'
 
     def update(self, subset=slice(None)):
-        # print('Class: MultiEllipsoidSampler, method: update (from nestedsampler.py)')
         """Update the bounding ellipsoids using the current set of
         live points."""
 
@@ -699,7 +694,6 @@ class MultiEllipsoidSampler(SuperSampler):
         return copy.deepcopy(self.mell)
 
     def propose_unif(self, *args):
-        # print('Class: MultiEllipsoidSampler, method: propose_unif (from nestedsampler.py)')
         """Propose a new live point by sampling *uniformly* within
         the union of ellipsoids."""
 
@@ -731,7 +725,6 @@ class MultiEllipsoidSampler(SuperSampler):
         return u, self.mell.ells[idx].axes
 
     def propose_live(self, *args):
-        # print('Class: MultiEllipsoidSampler, method: propose_live (from nestedsampler.py)')
         """Return a live point/axes to be used by other sampling methods.
            If args is not empty, it contains the subset of indices of points to
            sample from."""
@@ -765,6 +758,7 @@ class MultiEllipsoidSampler(SuperSampler):
             ax = self.mell.ells[ell_idx].axes
         else:
             ax = np.identity(self.ndim)
+
         return u, ax
 
 
